@@ -2,6 +2,8 @@
 #define PA2PROJECT_PARTICLES_CUH
 
 #include <vector>
+#include <memory>
+#include "HeightMap.cuh"
 
 using namespace std;
 
@@ -13,19 +15,21 @@ struct Particle {
 
 class Particles {
 private:
+    static constexpr uchar3 leaderColor = {255, 0, 0};
+    static constexpr uchar3 followerColor = {0, 0, 255};
     vector<Particle> generate(int n, float imgWidth, float imgHeight);
     Particle* generateOnGPU(int n, float imgWidth, float imgHeight);
 public:
     int leaderCount;
     int followerCount;
+    shared_ptr<HeightMap> hMap;
     Particle* dLeaders;
     Particle* dFollowers;
 
-    Particles() = default;
+    Particles(int lCount, int fCount, shared_ptr<HeightMap> hMap);
     ~Particles();
 
-    void init(int lCount, int fCount, unsigned int imgWidth, unsigned int imgHeight);
-    void renderToTexture();
+    void renderToOverlay();
 };
 
 

@@ -2,7 +2,9 @@
 #define PA2PROJECT_HEIGHMAP_CUH
 
 #include <GL/glew.h>
+#include <memory>
 #include <string>
+#include "Settings.h"
 
 using namespace std;
 
@@ -44,9 +46,10 @@ public:
     CudaData cudaData;
     unsigned int overlayTexId;
 
+    HeightMap(shared_ptr<Settings> settings);
     ~HeightMap();
 
-    void init(const string& path);
+
 
     void display();
     void resize(GLsizei w, GLsizei h);

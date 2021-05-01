@@ -7,8 +7,10 @@
 #include <imageManager.h>
 #include <vector>
 
-void HeightMap::init(const string& path) {
-    prepareGlObjects(path.c_str());
+HeightMap::HeightMap(shared_ptr<Settings> settings) {
+    prepareGlObjects(settings->heightMap.c_str());
+    this->glData.viewportWidth = settings->viewportWidth;
+    this->glData.viewportHeight = settings->viewportHeight;
     initCUDAObjects();
     initOverlayTexture();
 }
@@ -152,3 +154,5 @@ void HeightMap::resize(GLsizei w, GLsizei h) {
     glLoadIdentity();
     glutPostRedisplay();
 }
+
+
