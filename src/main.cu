@@ -14,7 +14,7 @@ shared_ptr<Settings> settings;
 shared_ptr<HeightMap> hMap;
 shared_ptr<Particles> particles;
 
-void my_idle() {
+void idle() {
     particles->renderToOverlay();
     glutPostRedisplay();
 }
@@ -32,7 +32,7 @@ void initGL(int argc, char** argv) {
 
     glutDisplayFunc([](){ hMap->display(); });
     glutReshapeFunc([](GLsizei w, GLsizei h){ hMap->resize(w, h); });
-    glutIdleFunc(my_idle);
+    glutIdleFunc(idle);
     glutSetCursor(GLUT_CURSOR_CROSSHAIR);
 
     // initialize necessary OpenGL extensions
@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
     settings = make_shared<Settings>(argv[1]);
     initGL(1, argv);
     hMap = make_shared<HeightMap>(settings);
-    particles = make_shared<Particles>(settings->leaders, settings->followers, hMap);
+    particles = make_shared<Particles>(settings, hMap);
 
     #pragma endregion
 

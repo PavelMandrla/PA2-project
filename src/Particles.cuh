@@ -20,13 +20,12 @@ private:
     vector<Particle> generate(int n, float imgWidth, float imgHeight);
     Particle* generateOnGPU(int n, float imgWidth, float imgHeight);
 public:
-    int leaderCount;
-    int followerCount;
+    shared_ptr<Settings> settings;
     shared_ptr<HeightMap> hMap;
     Particle* dLeaders;
     Particle* dFollowers;
 
-    Particles(int lCount, int fCount, shared_ptr<HeightMap> hMap);
+    Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap);
     ~Particles();
 
     void renderToOverlay();

@@ -4,21 +4,22 @@
 #include <chrono>
 #include <cudaDefs.h>
 
-Particles::Particles(int lCount, int fCount, shared_ptr<HeightMap> hMap) {
-    this->leaderCount = lCount;
-    this->followerCount = fCount;
+Particles::Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap) {
+    //this->leaderCount = lCount;
+    //this->followerCount = fCount;
+    this->settings = settings;
     this->hMap = hMap;
 
     float w = float(hMap->glData.imageWidth);
     float h = float(hMap->glData.imageHeight);
-    this->dLeaders = this->generateOnGPU(lCount, w, h);
-    this->dFollowers = this->generateOnGPU(fCount, w, h);
+    this->dLeaders = this->generateOnGPU(settings->leaders, w, h);
+    this->dFollowers = this->generateOnGPU(settings->followers, w, h);
 
-    Particle hLeaders[lCount];
-    cudaMemcpy(hLeaders, dLeaders, lCount * sizeof(Particle), cudaMemcpyDeviceToHost);
+    Particle hLeaders[settings->leaders];
+    cudaMemcpy(hLeaders, dLeaders, settings->leaders * sizeof(Particle), cudaMemcpyDeviceToHost);
 
-    Particle hFollowers[fCount];
-    cudaMemcpy(hFollowers, dFollowers, fCount * sizeof(Particle), cudaMemcpyDeviceToHost);
+    Particle hFollowers[settings->followers];
+    cudaMemcpy(hFollowers, dFollowers, settings->followers * sizeof(Particle), cudaMemcpyDeviceToHost);
 
 }
 
@@ -97,8 +98,8 @@ void Particles::renderToOverlay() {
         constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
         dim3 block(128, 1, 1);
         dim3 grid((hMap->glData.imageWidth + TPB_1D - 1) / TPB_1D, 1, 1);
-        renderParticles<<<grid, block>>>(Particles::leaderColor,    dLeaders,   this->leaderCount,   pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
-        renderParticles<<<grid, block>>>(Particles::followerColor,  dFollowers, this->followerCount, pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
+        renderParticles<<<grid, block>>>(Particles::leaderColor,    dLeaders,   settings->leaders,   pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
+        renderParticles<<<grid, block>>>(Particles::followerColor,  dFollowers, settings->followers, pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
     };
 
     checkCudaErrors(cudaGraphicsUnmapResources(1, &hMap->cudaData.pboResource, 0));
@@ -110,5 +111,7 @@ void Particles::renderToOverlay() {
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 }
+
+
 
 
