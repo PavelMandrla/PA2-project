@@ -49,8 +49,6 @@ public:
     HeightMap(shared_ptr<Settings> settings);
     ~HeightMap();
 
-
-
     void display();
     void resize(GLsizei w, GLsizei h);
 };

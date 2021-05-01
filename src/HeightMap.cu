@@ -100,7 +100,7 @@ void HeightMap::initOverlayTexture() {
     glGenTextures(1, &overlayTexId);
     glBindTexture(GL_TEXTURE_2D, overlayTexId);
 
-    std::vector<GLubyte> emptyData(this->glData.imageWidth * this->glData.imageHeight * 4, 0);
+    std::vector<GLubyte> emptyData(this->glData.imageWidth * this->glData.imageHeight * 4, 200);
     glTexImage2D(GL_TEXTURE_2D,0, GL_RGBA, this->glData.imageWidth, this->glData.imageHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptyData[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);

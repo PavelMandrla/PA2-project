@@ -13,6 +13,13 @@ Particles::Particles(int lCount, int fCount, shared_ptr<HeightMap> hMap) {
     float h = float(hMap->glData.imageHeight);
     this->dLeaders = this->generateOnGPU(lCount, w, h);
     this->dFollowers = this->generateOnGPU(fCount, w, h);
+
+    Particle hLeaders[lCount];
+    cudaMemcpy(hLeaders, dLeaders, lCount * sizeof(Particle), cudaMemcpyDeviceToHost);
+
+    Particle hFollowers[fCount];
+    cudaMemcpy(hFollowers, dFollowers, fCount * sizeof(Particle), cudaMemcpyDeviceToHost);
+
 }
 
 vector<Particle> Particles::generate(int n, float imgWidth, float imgHeight) {
@@ -33,8 +40,8 @@ vector<Particle> Particles::generate(int n, float imgWidth, float imgHeight) {
 Particle* Particles::generateOnGPU(int n, float imgWidth, float imgHeight) {
     Particle* result;
     auto particles = Particles::generate(n, imgWidth, imgHeight);
-    checkCudaErrors(cudaMalloc((void**)&result, n * sizeof(Particles)));
-    checkCudaErrors(cudaMemcpy(result, particles.data(), n * sizeof(Particles), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMalloc((void**)&result, n * sizeof(Particle)));
+    checkCudaErrors(cudaMemcpy(result, particles.data(), n * sizeof(Particle), cudaMemcpyHostToDevice));
     return result;
 }
 
@@ -97,6 +104,7 @@ void Particles::renderToOverlay() {
     checkCudaErrors(cudaGraphicsUnmapResources(1, &hMap->cudaData.pboResource, 0));
 
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, hMap->glData.pboID);
+    auto err = glGetError();
     glBindTexture(GL_TEXTURE_2D, hMap->overlayTexId);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, hMap->glData.imageWidth, hMap->glData.imageHeight, GL_RGBA, GL_UNSIGNED_BYTE, NULL);   //Source parameter is NULL, Data is coming from a PBO, not host memory
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
