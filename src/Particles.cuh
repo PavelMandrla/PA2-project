@@ -3,19 +3,20 @@
 
 #include <vector>
 #include <memory>
+#include <utility>
 #include "HeightMap.cuh"
 
 #include <cudaDefs.h>
 #include <cublas_v2.h>
 
 using namespace std;
-
+/*
 struct Particle {
     float x, y;         // POSITION
     float v_x { 0.0f }; // VELOCITY IN DIRECTION X
     float v_y { 0.0f }; // VELOCITY IN DIRECTION Y
 };
-
+*/
 class Particles {
 private:
     static constexpr uchar3 leaderColor = {255, 0, 0};
@@ -29,13 +30,21 @@ private:
 
     float* dOnes;
 
-    vector<Particle> generate(int n, float imgWidth, float imgHeight);
-    Particle* generateOnGPU(int n, float imgWidth, float imgHeight);
+    pair<vector<float2>, vector<float2>> generate(int n, float imgWidth, float imgHeight);
+    void generateOnGPU(int n, float imgWidth, float imgHeight, float2* &pos, float2* &vel);
+
+    //vector<Particle> generate(int n, float imgWidth, float imgHeight);
+    //Particle* generateOnGPU(int n, float imgWidth, float imgHeight);
 public:
     shared_ptr<Settings> settings;
     shared_ptr<HeightMap> hMap;
-    Particle* dLeaders;
-    Particle* dFollowers;
+
+    //LEADER DATA
+    float2* dLeaderPos;
+    float2* dLeaderVel;
+    //FOLLOWER DATA
+    float2* dFollowerPos;
+    float2* dFollowerVel;
 
     Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap);
     ~Particles();

@@ -13,8 +13,8 @@ Particles::Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap) 
 
     float w = float(hMap->glData.imageWidth);
     float h = float(hMap->glData.imageHeight);
-    this->dLeaders = this->generateOnGPU(settings->leaders, w, h);
-    this->dFollowers = this->generateOnGPU(settings->followers, w, h);
+    this->generateOnGPU(settings->leaders, w, h, this->dLeaderPos, this->dLeaderVel);
+    this->generateOnGPU(settings->followers, w, h, this->dFollowerPos, this->dFollowerVel);
 
     this->status = cublasStatus_t();
     this->handle = cublasHandle_t();
@@ -27,44 +27,41 @@ Particles::Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap) 
     //cudaMalloc( (void**)&dDistances, settings->leaders * settings->followers * sizeof(float));
 }
 
-vector<Particle> Particles::generate(int n, float imgWidth, float imgHeight) {
-    std::mt19937 generator(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-    std::vector<Particle> result;
+Particles::~Particles() {
+    status = cublasDestroy(handle);
+    if (this->dLeaderPos) cudaFree(this->dLeaderPos);
+    if (this->dLeaderVel) cudaFree(this->dLeaderVel);
+    if (this->dFollowerPos) cudaFree(this->dFollowerPos);
+    if (this->dFollowerVel) cudaFree(this->dFollowerVel);
+}
 
+pair<vector<float2>, vector<float2>> Particles::generate(int n, float imgWidth, float imgHeight) {
+    vector<float2> pos;
+    vector<float2> vel;
+
+    std::mt19937 generator(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     std::uniform_real_distribution<float> dis(0.0, 1.0);
 
     float dW = imgWidth / float(n);
     float dH = imgHeight / float(n);
     for (int i = 0; i < n; i++) {
-        result.push_back(Particle {
-                i * dW,
-                i * dH,
-                0.0f, 0.0f
-        });
-
-        /*
-        result.push_back(Particle {
-                dis(generator) * imgWidth,
-                dis(generator) * imgHeight,
-                0.0f, 0.0f
-        });*/
+        pos.push_back(float2 {i * dW, i * dH});
+        //pos.push_back(float2 {dis(generator) * imgWidth, dis(generator) * imgWidth});
+        vel.push_back(float2 {0, 0});
     }
-    return result;
+
+
+    return make_pair(pos, vel);
 }
 
-Particle* Particles::generateOnGPU(int n, float imgWidth, float imgHeight) {
-    Particle* result;
-    auto particles = Particles::generate(n, imgWidth, imgHeight);
-    checkCudaErrors(cudaMalloc((void**)&result, n * sizeof(Particle)));
-    checkCudaErrors(cudaMemcpy(result, particles.data(), n * sizeof(Particle), cudaMemcpyHostToDevice));
-    return result;
+void Particles::generateOnGPU(int n, float imgWidth, float imgHeight, float2* &pos, float2* &vel) {
+    checkCudaErrors(cudaMalloc((void**)&pos, n * sizeof(float2)));
+    checkCudaErrors(cudaMalloc((void**)&vel, n * sizeof(float2)));
+    auto tmp = this->generate(n, imgWidth, imgHeight);
+    checkCudaErrors(cudaMemcpy(pos, tmp.first.data(), n * sizeof(float2), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(vel, tmp.second.data(), n * sizeof(float2), cudaMemcpyHostToDevice));
 }
 
-Particles::~Particles() {
-    status = cublasDestroy(handle);
-    if (this->dLeaders) cudaFree(this->dLeaders);
-    if (this->dFollowers) cudaFree(this->dFollowers);
-}
 
 __global__ void clearPBO(unsigned char* pbo, const unsigned int pboWidth, const unsigned int pboHeight) {
     unsigned int tx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -79,12 +76,12 @@ __global__ void clearPBO(unsigned char* pbo, const unsigned int pboWidth, const 
     pbo[pboIdx]   = 0;
 }
 
-__global__ void renderParticles(uchar3 color, Particle* particles, int particleCount, unsigned char* pbo, const unsigned int pboWidth, const unsigned int pboHeight) {
+__global__ void renderParticles(uchar3 color, float2* particles, int particleCount, unsigned char* pbo, const unsigned int pboWidth, const unsigned int pboHeight) {
     unsigned int tx = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned int jump = blockDim.x * gridDim.x;
 
     while (tx < particleCount) {
-        Particle p = particles[tx];
+        float2 p = particles[tx];
         unsigned int pboIdx = ((floor(p.y) * pboWidth) + floor(p.x)) * 4;
         pbo[pboIdx++] = color.x;
         pbo[pboIdx++] = color.y;
@@ -113,8 +110,8 @@ void Particles::renderToOverlay() {
         constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
         dim3 block(128, 1, 1);
         dim3 grid((hMap->glData.imageWidth + TPB_1D - 1) / TPB_1D, 1, 1);
-        renderParticles<<<grid, block>>>(Particles::leaderColor,    dLeaders,   settings->leaders,   pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
-        renderParticles<<<grid, block>>>(Particles::followerColor,  dFollowers, settings->followers, pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
+        renderParticles<<<grid, block>>>(Particles::leaderColor,    dLeaderPos,   settings->leaders,   pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
+        renderParticles<<<grid, block>>>(Particles::followerColor,  dFollowerPos, settings->followers, pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
     };
 
     checkCudaErrors(cudaGraphicsUnmapResources(1, &hMap->cudaData.pboResource, 0));
@@ -126,11 +123,12 @@ void Particles::renderToOverlay() {
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 }
 
-__global__ void createSquareMatrix(Particle* particles, int particleCount, float* dst) {
+
+__global__ void createSquareMatrix(float2* particles, int particleCount, float* dst) {
     unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int jump = gridDim.x * blockDim.x;
 
-    Particle* particle = &particles[idx];
+    float2 * particle = &particles[idx];
     float* row = &dst[2*idx];
     while (idx < particleCount) {
         row[0] = particle->x * particle->x;
@@ -142,7 +140,7 @@ __global__ void createSquareMatrix(Particle* particles, int particleCount, float
     }
 }
 
-inline void squarePositions(float* &dPositionsSq, Particle* dParticles, unsigned int activeParticles) {
+inline void squarePositions(float* &dPositionsSq, float2* dParticles, unsigned int activeParticles) {
     checkCudaErrors(cudaMalloc((void**)&dPositionsSq, 2 * activeParticles * sizeof(float)));
     constexpr unsigned int TPB_1D = 128;
     dim3 block(128,1,1); //TODO -> change TPB1D?
@@ -156,12 +154,10 @@ void Particles::calculateDistances() {
     checkCudaErrors(cudaMalloc( (void**)&dDistances, activeLeaders * activeFollowers * sizeof(float)));
 
     // SQUARE OF POSITIONS
-    float* dLeadersPos;
-    float* dFollowersPos;
     float* dLeadersPosSq;
     float* dFollowersPosSq;
-    squarePositions(dLeadersPosSq, dLeaders, activeLeaders);
-    squarePositions(dFollowersPosSq, dFollowers, activeFollowers);
+    squarePositions(dLeadersPosSq, dLeaderPos, activeLeaders);
+    squarePositions(dFollowersPosSq, dFollowerPos, activeFollowers);
 
     float alpha = 1.0f;
     float beta = 0.0f;
@@ -172,6 +168,7 @@ void Particles::calculateDistances() {
                                 dOnes, 2,
                                 &beta,
                                 dDistances, activeFollowers);
+
 
     //alpha = 1.0f;
     beta = 1.0f;
@@ -186,23 +183,26 @@ void Particles::calculateDistances() {
     alpha = -2.0f;
     //beta = 1.0f;
     response = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                           activeFollowers, activeLeaders, 2,  //  M, N, K
-                           &alpha,
-                           dOnes, 2,
-                           dLeadersPosSq, 2,
-                           &beta,
-                           dDistances, activeFollowers);
+                                activeFollowers, activeLeaders, 2,  //  M, N, K
+                                &alpha,
+                                (float*)dFollowerPos, 2,
+                                (float*)dLeaderPos, 2,
+                                &beta,
+                                dDistances, activeFollowers);
+    checkDeviceMatrix<float>(dDistances,sizeof(float) * activeFollowers, activeLeaders, activeFollowers, "%f ", "M");
 
-
-
-    //checkDeviceMatrix<float>(dDistances,	sizeof(float)*activeLeaders, activeFollowers, activeLeaders, "%f ", "M");
-    checkDeviceMatrix<float>(dFollowersPosSq, sizeof(float) * 2, activeFollowers, 2, "%f ", "Leaders pos square");
-    //checkDeviceMatrix<float>(dLeadersPosSq, sizeof(float)*2, activeLeaders, 2, "%f ", "Leaders pos square");
-    checkDeviceMatrix<float>(dOnes, sizeof(float)*2, activeLeaders, 2, "%f ", "Leaders pos square");
-    checkDeviceMatrix<float>(dDistances,	sizeof(float)*activeFollowers,activeLeaders, activeFollowers, "%f ", "M");
+    //checkDeviceMatrix<float>(dDistances,sizeof(float2) * activeLeaders, activeFollowers, activeLeaders, "%f ", "M");
+    checkDeviceMatrix<float>(dFollowersPosSq,   sizeof(float) * 2, activeFollowers,    2, "%f ", "Follower position - square");
+    //checkDeviceMatrix<float>(dLeadersPosSq,     sizeof(float) * 2 * activeLeaders,     activeLeaders,      2, "%f ", "Leader position - square");
+    //checkDeviceMatrix<float>(dOnes, sizeof(float)*2, activeLeaders, 2, "%f ", "Ones");
+    //checkDeviceMatrix<float>(dDistances,	sizeof(float)*activeFollowers,activeLeaders, activeFollowers, "%f ", "M");
     //checkDeviceMatrix<float>(dFollowersPosSq, sizeof(float)*2, activeFollowers, 2, "%f ", "Leaders pos square");
 
 }
+
+
+
+
 
 
 

@@ -1,6 +1,6 @@
 {
   "leaders": 10,
-  "followers": 20,
+  "followers": 10,
   "heightmap": "/home/pavel/prg/cpp/ParallelApplications2/terrain10x10.tif",
   "heightmapGridX": 16000,
   "heightmapGridY": 9000,
