@@ -10,13 +10,7 @@
 #include <cublas_v2.h>
 
 using namespace std;
-/*
-struct Particle {
-    float x, y;         // POSITION
-    float v_x { 0.0f }; // VELOCITY IN DIRECTION X
-    float v_y { 0.0f }; // VELOCITY IN DIRECTION Y
-};
-*/
+
 class Particles {
 private:
     static constexpr uchar3 leaderColor = {255, 0, 0};
@@ -33,8 +27,9 @@ private:
     pair<vector<float2>, vector<float2>> generate(int n, float imgWidth, float imgHeight);
     void generateOnGPU(int n, float imgWidth, float imgHeight, float2* &pos, float2* &vel);
 
-    //vector<Particle> generate(int n, float imgWidth, float imgHeight);
-    //Particle* generateOnGPU(int n, float imgWidth, float imgHeight);
+    void moveLeaders();
+    void moveFollowers();
+    void calculateDistances();
 public:
     shared_ptr<Settings> settings;
     shared_ptr<HeightMap> hMap;
@@ -46,11 +41,13 @@ public:
     float2* dFollowerPos;
     float2* dFollowerVel;
 
+    float* dDistances;
+
     Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap);
     ~Particles();
 
     void renderToOverlay();
-    void calculateDistances();
+    void move();
 };
 
 

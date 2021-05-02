@@ -24,6 +24,7 @@ Particles::Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap) 
     cudaMalloc((void**)&this->dOnes, sizeof(float) * onesCount);
     cudaMemcpy(dOnes, vector<float>(onesCount, 1.0f).data(), sizeof(float) * onesCount, cudaMemcpyHostToDevice);
 
+    checkCudaErrors(cudaMalloc((void**)&this->dDistances, activeLeaders * activeFollowers * sizeof(float)));
     //cudaMalloc( (void**)&dDistances, settings->leaders * settings->followers * sizeof(float));
 }
 
@@ -33,6 +34,7 @@ Particles::~Particles() {
     if (this->dLeaderVel) cudaFree(this->dLeaderVel);
     if (this->dFollowerPos) cudaFree(this->dFollowerPos);
     if (this->dFollowerVel) cudaFree(this->dFollowerVel);
+    if (this->dDistances) cudaFree(this->dDistances);
 }
 
 pair<vector<float2>, vector<float2>> Particles::generate(int n, float imgWidth, float imgHeight) {
@@ -41,13 +43,14 @@ pair<vector<float2>, vector<float2>> Particles::generate(int n, float imgWidth, 
 
     std::mt19937 generator(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     std::uniform_real_distribution<float> dis(0.0, 1.0);
+    std::uniform_real_distribution<float> disVel(-1, 1);
 
     float dW = imgWidth / float(n);
     float dH = imgHeight / float(n);
     for (int i = 0; i < n; i++) {
-        pos.push_back(float2 {i * dW, i * dH});
-        //pos.push_back(float2 {dis(generator) * imgWidth, dis(generator) * imgWidth});
-        vel.push_back(float2 {0, 0});
+        //pos.push_back(float2 {i * dW, i * dH});
+        pos.push_back(float2 {dis(generator) * imgWidth, dis(generator) * imgWidth});
+        vel.push_back(float2 {disVel(generator), disVel(generator)});
     }
 
 
@@ -76,18 +79,30 @@ __global__ void clearPBO(unsigned char* pbo, const unsigned int pboWidth, const 
     pbo[pboIdx]   = 0;
 }
 
+__device__ __forceinline__ void renderPixel(int x, int y, uchar3 color, const unsigned int width, const unsigned int height, unsigned char* pbo) {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+        unsigned int pboIdx = ((y * width) + x) * 4;
+        pbo[pboIdx++] = color.x;
+        pbo[pboIdx++] = color.y;
+        pbo[pboIdx++] = color.z;
+        pbo[pboIdx]   = 255;
+    }
+}
+
 __global__ void renderParticles(uchar3 color, float2* particles, int particleCount, unsigned char* pbo, const unsigned int pboWidth, const unsigned int pboHeight) {
     unsigned int tx = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned int jump = blockDim.x * gridDim.x;
 
     while (tx < particleCount) {
         float2 p = particles[tx];
-        unsigned int pboIdx = ((floor(p.y) * pboWidth) + floor(p.x)) * 4;
-        pbo[pboIdx++] = color.x;
-        pbo[pboIdx++] = color.y;
-        pbo[pboIdx++] = color.z;
-        pbo[pboIdx]   = 255;
+        int x = floor(p.x);
+        int y = floor(p.y);
 
+        for (int dX = -10; dX <= 10; dX++) {
+            for (int dY = -10; dY <= 10; dY++) {
+                renderPixel(x+dX, y + dY, color, pboWidth, pboHeight, pbo);
+            }
+        }
         tx += jump;
     }
 }
@@ -149,10 +164,6 @@ inline void squarePositions(float* &dPositionsSq, float2* dParticles, unsigned i
 }
 
 void Particles::calculateDistances() {
-    // M*N distance matrix
-    float* dDistances;
-    checkCudaErrors(cudaMalloc( (void**)&dDistances, activeLeaders * activeFollowers * sizeof(float)));
-
     // SQUARE OF POSITIONS
     float* dLeadersPosSq;
     float* dFollowersPosSq;
@@ -168,7 +179,6 @@ void Particles::calculateDistances() {
                                 dOnes, 2,
                                 &beta,
                                 dDistances, activeFollowers);
-
 
     //alpha = 1.0f;
     beta = 1.0f;
@@ -189,21 +199,86 @@ void Particles::calculateDistances() {
                                 (float*)dLeaderPos, 2,
                                 &beta,
                                 dDistances, activeFollowers);
-    checkDeviceMatrix<float>(dDistances,sizeof(float) * activeFollowers, activeLeaders, activeFollowers, "%f ", "M");
-
-    //checkDeviceMatrix<float>(dDistances,sizeof(float2) * activeLeaders, activeFollowers, activeLeaders, "%f ", "M");
-    checkDeviceMatrix<float>(dFollowersPosSq,   sizeof(float) * 2, activeFollowers,    2, "%f ", "Follower position - square");
-    //checkDeviceMatrix<float>(dLeadersPosSq,     sizeof(float) * 2 * activeLeaders,     activeLeaders,      2, "%f ", "Leader position - square");
-    //checkDeviceMatrix<float>(dOnes, sizeof(float)*2, activeLeaders, 2, "%f ", "Ones");
-    //checkDeviceMatrix<float>(dDistances,	sizeof(float)*activeFollowers,activeLeaders, activeFollowers, "%f ", "M");
-    //checkDeviceMatrix<float>(dFollowersPosSq, sizeof(float)*2, activeFollowers, 2, "%f ", "Leaders pos square");
+    //checkDeviceMatrix<float>(dDistances,sizeof(float) * activeFollowers, activeLeaders, activeFollowers, "%f ", "M");
 
 }
+/*
+__device__ __forceinline__ float getDist(float* dDistances, int leader, int follower) {
+
+}
+*/
+__global__ void moveParticles_Followers(float2* particlePos, float2* particleVel, unsigned int particleCount, float2* leaderPos, unsigned int leaderCount, float* dDistances) {
+    unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int jump = gridDim.x * blockDim.x;
+
+    float2 *pos = &particlePos[idx];
+    float2 *vel = &particleVel[idx];
+    while (idx < particleCount) {
+        //FIND CLOSEST LEADER
+        float *dst = dDistances + idx * leaderCount;
+        int clLeaderI = 0;
+        float clLeaderDst = *dst;
+        for (int i = 1; i < leaderCount; i++, dst++) {
+            if (*dst < clLeaderDst) {
+                clLeaderDst = *dst;
+                clLeaderI = i;
+            }
+        }
+        // MOVE TO LEADER
+        float2 clLeaderPos = leaderPos[clLeaderI];
+        float2 dir = {(clLeaderPos.x - pos->x) / sqrt(clLeaderDst), (clLeaderPos.y - pos->y) / sqrt(clLeaderDst)};
+
+        *pos = float2{pos->x + dir.x, pos->y + dir.y};
 
 
+        pos += jump;
+        idx += jump;
+    }
+}
 
+void Particles::moveFollowers() {
+    constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
+    dim3 block(TPB_1D, 1, 1);
+    dim3 grid((activeLeaders + TPB_1D - 1) / TPB_1D, 1, 1);
+    //float2* particlePos, float2* particleVel, unsigned int particleCount, float2* leaderPos, unsigned int leaderCount, float* dDistances
+    moveParticles_Followers<<<grid, block>>>(dFollowerPos, dFollowerVel, activeFollowers, dLeaderPos, activeLeaders, dDistances);
+}
 
+__global__ void moveParticles_Leaders(float2* particlePos, float2* particleVel, unsigned int particleCount, int imgW, int imgH) {
+    unsigned int tx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int jump = blockDim.x * gridDim.x;
 
+    float2* pos = &particlePos[tx];
+    float2* vel = &particleVel[tx];
+    while (tx < particleCount) {
+        float2 nPos = float2 { pos->x + vel->x, pos->y + vel->y };
+        if (nPos.x < 0 || nPos.x >= imgW) {
+            vel->x *= -1;
+            nPos.x = pos->x + vel->x;
+        }
+        if (nPos.y < 0 || nPos.y >= imgH) {
+            vel->y *= -1;
+            nPos.y = pos->y + vel->y;
+        }
+        *pos = nPos;
 
+        pos += jump;
+        vel += jump;
+        tx += jump;
+    }
+}
+
+void Particles::moveLeaders() {
+    constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
+    dim3 block(TPB_1D, 1, 1);
+    dim3 grid((activeLeaders + TPB_1D - 1) / TPB_1D, 1, 1);
+    moveParticles_Leaders<<<grid, block>>>(dLeaderPos, dLeaderVel, activeLeaders, hMap->glData.imageWidth, hMap->glData.imageHeight);
+}
+
+void Particles::move() {
+    this->moveLeaders();
+    this->calculateDistances();
+    this->moveFollowers();
+}
 
 
