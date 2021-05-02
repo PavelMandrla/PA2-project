@@ -5,6 +5,9 @@
 #include <memory>
 #include "HeightMap.cuh"
 
+#include <cudaDefs.h>
+#include <cublas_v2.h>
+
 using namespace std;
 
 struct Particle {
@@ -17,6 +20,15 @@ class Particles {
 private:
     static constexpr uchar3 leaderColor = {255, 0, 0};
     static constexpr uchar3 followerColor = {0, 0, 255};
+
+    unsigned int activeLeaders;
+    unsigned int activeFollowers;
+
+    cublasStatus_t status;
+    cublasHandle_t handle;
+
+    float* dOnes;
+
     vector<Particle> generate(int n, float imgWidth, float imgHeight);
     Particle* generateOnGPU(int n, float imgWidth, float imgHeight);
 public:
@@ -29,6 +41,7 @@ public:
     ~Particles();
 
     void renderToOverlay();
+    void calculateDistances();
 };
 
 

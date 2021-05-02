@@ -16,6 +16,7 @@ shared_ptr<Particles> particles;
 
 void idle() {
     particles->renderToOverlay();
+    particles->calculateDistances();
     glutPostRedisplay();
 }
 
