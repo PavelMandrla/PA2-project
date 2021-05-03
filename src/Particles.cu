@@ -42,14 +42,14 @@ pair<vector<float2>, vector<float2>> Particles::generate(int n, float imgWidth, 
     vector<float2> vel;
 
     std::mt19937 generator(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-    std::uniform_real_distribution<float> dis(0.0, 1.0);
+    std::uniform_real_distribution<float> dis(0.001f, 0.999f);
     std::uniform_real_distribution<float> disVel(-1, 1);
 
     float dW = imgWidth / float(n);
     float dH = imgHeight / float(n);
     for (int i = 0; i < n; i++) {
         //pos.push_back(float2 {i * dW, i * dH});
-        pos.push_back(float2 {dis(generator) * imgWidth, dis(generator) * imgWidth});
+        pos.push_back(float2 {dis(generator) * imgWidth, dis(generator) * imgHeight});
         vel.push_back(float2 {disVel(generator), disVel(generator)});
     }
 
@@ -96,7 +96,7 @@ __global__ void renderParticles(uchar3 color, float2* particles, int particleCou
     while (tx < particleCount) {
         float2 p = particles[tx];
         int x = floor(p.x);
-        int y = floor(p.y);
+        int y = floor(p.y); //TODO -> is origing OK?
 
         for (int dX = -10; dX <= 10; dX++) {
             for (int dY = -10; dY <= 10; dY++) {
@@ -125,8 +125,8 @@ void Particles::renderToOverlay() {
         constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
         dim3 block(128, 1, 1);
         dim3 grid((hMap->glData.imageWidth + TPB_1D - 1) / TPB_1D, 1, 1);
-        renderParticles<<<grid, block>>>(Particles::leaderColor,    dLeaderPos,   settings->leaders,   pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
         renderParticles<<<grid, block>>>(Particles::followerColor,  dFollowerPos, settings->followers, pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
+        renderParticles<<<grid, block>>>(Particles::leaderColor,    dLeaderPos,   settings->leaders,   pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
     };
 
     checkCudaErrors(cudaGraphicsUnmapResources(1, &hMap->cudaData.pboResource, 0));
@@ -173,62 +173,64 @@ void Particles::calculateDistances() {
     float alpha = 1.0f;
     float beta = 0.0f;
     auto response = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                                activeFollowers, activeLeaders, 2,  //  M, N, K
+                                activeLeaders, activeFollowers, 2,  //  M, N, K
                                 &alpha,
-                                dFollowersPosSq, 2,
                                 dOnes, 2,
+                                dFollowersPosSq, 2,
                                 &beta,
-                                dDistances, activeFollowers);
+                                dDistances, activeLeaders);
 
     //alpha = 1.0f;
     beta = 1.0f;
     response = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                           activeFollowers, activeLeaders, 2,  //  M, N, K
+                           activeLeaders, activeFollowers, 2,  //  M, N, K
                            &alpha,
-                           dOnes, 2,
                            dLeadersPosSq, 2,
+                           dOnes, 2,
                            &beta,
-                           dDistances, activeFollowers);
+                           dDistances, activeLeaders);
 
     alpha = -2.0f;
     //beta = 1.0f;
     response = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                                activeFollowers, activeLeaders, 2,  //  M, N, K
+                                activeLeaders, activeFollowers, 2,  //  M, N, K
                                 &alpha,
-                                (float*)dFollowerPos, 2,
                                 (float*)dLeaderPos, 2,
+                                (float*)dFollowerPos, 2,
                                 &beta,
-                                dDistances, activeFollowers);
-    //checkDeviceMatrix<float>(dDistances,sizeof(float) * activeFollowers, activeLeaders, activeFollowers, "%f ", "M");
+                                dDistances, activeLeaders);
+
+    checkDeviceMatrix<float>(dDistances,sizeof(float) * activeLeaders, activeFollowers, activeLeaders, "%f ", "M");
 
 }
-/*
-__device__ __forceinline__ float getDist(float* dDistances, int leader, int follower) {
 
-}
-*/
 __global__ void moveParticles_Followers(float2* particlePos, float2* particleVel, unsigned int particleCount, float2* leaderPos, unsigned int leaderCount, float* dDistances) {
     unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int jump = gridDim.x * blockDim.x;
 
     float2 *pos = &particlePos[idx];
     float2 *vel = &particleVel[idx];
+
     while (idx < particleCount) {
         //FIND CLOSEST LEADER
         float *dst = dDistances + idx * leaderCount;
         int clLeaderI = 0;
         float clLeaderDst = *dst;
-        for (int i = 1; i < leaderCount; i++, dst++) {
-            if (*dst < clLeaderDst) {
-                clLeaderDst = *dst;
+        for (int i = 1; i < leaderCount; i++) {
+            if (dst[i] < clLeaderDst) {
+                clLeaderDst = dst[i];
                 clLeaderI = i;
             }
         }
-        // MOVE TO LEADER
-        float2 clLeaderPos = leaderPos[clLeaderI];
-        float2 dir = {(clLeaderPos.x - pos->x) / sqrt(clLeaderDst), (clLeaderPos.y - pos->y) / sqrt(clLeaderDst)};
 
-        *pos = float2{pos->x + dir.x, pos->y + dir.y};
+        if (clLeaderDst > 0) {
+            // MOVE TO LEADER
+            float2 clLeaderPos = leaderPos[clLeaderI];
+            //float2 clLeaderPos = float2 {400, 400};
+            float2 dir = {(clLeaderPos.x - pos->x) / sqrt(clLeaderDst), (clLeaderPos.y - pos->y) / sqrt(clLeaderDst)};
+
+            *pos = float2{pos->x + dir.x, pos->y + dir.y};
+        }
 
 
         pos += jump;
