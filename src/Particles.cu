@@ -11,10 +11,7 @@ Particles::Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap) 
     this->activeLeaders = settings->leaders;
     this->activeFollowers = settings->followers;
 
-    float w = float(hMap->glData.imageWidth);
-    float h = float(hMap->glData.imageHeight);
-    this->generateOnGPU(settings->leaders, w, h, this->dLeaderPos, this->dLeaderVel);
-    this->generateOnGPU(settings->followers, w, h, this->dFollowerPos, this->dFollowerVel);
+    this->generateParticles();
 
     this->status = cublasStatus_t();
     this->handle = cublasHandle_t();
@@ -25,44 +22,58 @@ Particles::Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap) 
     cudaMemcpy(dOnes, vector<float>(onesCount, 1.0f).data(), sizeof(float) * onesCount, cudaMemcpyHostToDevice);
 
     checkCudaErrors(cudaMalloc((void**)&this->dDistances, activeLeaders * activeFollowers * sizeof(float)));
-    //cudaMalloc( (void**)&dDistances, settings->leaders * settings->followers * sizeof(float));
 }
 
 Particles::~Particles() {
     status = cublasDestroy(handle);
     if (this->dLeaderPos) cudaFree(this->dLeaderPos);
-    if (this->dLeaderVel) cudaFree(this->dLeaderVel);
+    if (this->dLeaderDir) cudaFree(this->dLeaderDir);
     if (this->dFollowerPos) cudaFree(this->dFollowerPos);
-    if (this->dFollowerVel) cudaFree(this->dFollowerVel);
     if (this->dDistances) cudaFree(this->dDistances);
 }
 
-pair<vector<float2>, vector<float2>> Particles::generate(int n, float imgWidth, float imgHeight) {
+vector<float2> Particles::generatePositions(int n) {
     vector<float2> pos;
-    vector<float2> vel;
-
-    std::mt19937 generator(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+    std::mt19937 generator(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     std::uniform_real_distribution<float> dis(0.001f, 0.999f);
-    std::uniform_real_distribution<float> disVel(-1, 1);
 
-    float dW = imgWidth / float(n);
-    float dH = imgHeight / float(n);
+    //float dW = imgWidth / float(n);
+    //float dH = imgHeight / float(n);
     for (int i = 0; i < n; i++) {
+        // POSITION ON MAP
         //pos.push_back(float2 {i * dW, i * dH});
-        pos.push_back(float2 {dis(generator) * imgWidth, dis(generator) * imgHeight});
-        vel.push_back(float2 {disVel(generator), disVel(generator)});
+        pos.push_back(float2 {dis(generator) * float(hMap->glData.imageWidth), dis(generator) * float(hMap->glData.imageHeight)});
     }
-
-
-    return make_pair(pos, vel);
+    return pos;
 }
 
-void Particles::generateOnGPU(int n, float imgWidth, float imgHeight, float2* &pos, float2* &vel) {
-    checkCudaErrors(cudaMalloc((void**)&pos, n * sizeof(float2)));
-    checkCudaErrors(cudaMalloc((void**)&vel, n * sizeof(float2)));
-    auto tmp = this->generate(n, imgWidth, imgHeight);
-    checkCudaErrors(cudaMemcpy(pos, tmp.first.data(), n * sizeof(float2), cudaMemcpyHostToDevice));
-    checkCudaErrors(cudaMemcpy(vel, tmp.second.data(), n * sizeof(float2), cudaMemcpyHostToDevice));
+vector<float2> Particles::generateDirections(int n) {
+    vector<float2> dirs;
+    std::mt19937 generator(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+    std::uniform_real_distribution<float> disVel(-1, 1);
+
+    for (int i = 0; i < n; i++) {
+        // NORMALIZED MOVEMENT DIRECTION
+        float2 dir { disVel(generator), disVel(generator) };
+        float dirL = sqrt(pow(dir.x, 2) + pow(dir.y, 2));
+        dir.x /= dirL;
+        dir.y /= dirL;
+        dirs.push_back(dir);
+    }
+    return dirs;
+}
+
+void Particles::generateParticles() {
+    // LEADERS - positions
+    checkCudaErrors(cudaMalloc((void**)&dLeaderPos, settings->leaders * sizeof(float2)));
+    checkCudaErrors(cudaMemcpy(dLeaderPos, generatePositions(settings->leaders).data(), settings->leaders * sizeof(float2), cudaMemcpyHostToDevice));
+    // LEADERS - directions
+    checkCudaErrors(cudaMalloc((void**)&dLeaderDir, settings->leaders * sizeof(float2)));
+    checkCudaErrors(cudaMemcpy(dLeaderDir, generateDirections(settings->leaders).data(), settings->leaders * sizeof(float2), cudaMemcpyHostToDevice));
+    // FOLLOWERS - positions
+    checkCudaErrors(cudaMalloc((void**)&dFollowerPos, settings->followers * sizeof(float2)));
+    checkCudaErrors(cudaMemcpy(dFollowerPos, generatePositions(settings->followers).data(), settings->followers * sizeof(float2), cudaMemcpyHostToDevice));
+
 }
 
 
@@ -200,16 +211,15 @@ void Particles::calculateDistances() {
                                 &beta,
                                 dDistances, activeLeaders);
 
-    checkDeviceMatrix<float>(dDistances,sizeof(float) * activeLeaders, activeFollowers, activeLeaders, "%f ", "M");
+    //checkDeviceMatrix<float>(dDistances,sizeof(float) * activeLeaders, activeFollowers, activeLeaders, "%f ", "M");
 
 }
 
-__global__ void moveParticles_Followers(float2* particlePos, float2* particleVel, unsigned int particleCount, float2* leaderPos, unsigned int leaderCount, float* dDistances) {
+__global__ void moveParticles_Followers(float2* particlePos, unsigned int particleCount, float2* leaderPos, unsigned int leaderCount, float* dDistances) {
     unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int jump = gridDim.x * blockDim.x;
 
     float2 *pos = &particlePos[idx];
-    float2 *vel = &particleVel[idx];
 
     while (idx < particleCount) {
         //FIND CLOSEST LEADER
@@ -242,30 +252,37 @@ void Particles::moveFollowers() {
     constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
     dim3 block(TPB_1D, 1, 1);
     dim3 grid((activeLeaders + TPB_1D - 1) / TPB_1D, 1, 1);
-    //float2* particlePos, float2* particleVel, unsigned int particleCount, float2* leaderPos, unsigned int leaderCount, float* dDistances
-    moveParticles_Followers<<<grid, block>>>(dFollowerPos, dFollowerVel, activeFollowers, dLeaderPos, activeLeaders, dDistances);
+    moveParticles_Followers<<<grid, block>>>(dFollowerPos, activeFollowers, dLeaderPos, activeLeaders, dDistances);
 }
 
-__global__ void moveParticles_Leaders(float2* particlePos, float2* particleVel, unsigned int particleCount, int imgW, int imgH) {
+__global__ void moveParticles_Leaders(const cudaTextureObject_t srcTex, float2* particlePos, float2* particleDir, unsigned int particleCount, int imgW, int imgH) {
     unsigned int tx = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned int jump = blockDim.x * gridDim.x;
 
     float2* pos = &particlePos[tx];
-    float2* vel = &particleVel[tx];
+    float2* dir = &particleDir[tx];
     while (tx < particleCount) {
-        float2 nPos = float2 { pos->x + vel->x, pos->y + vel->y };
+        float2 nPos = float2 { pos->x + dir->x, pos->y + dir->y };
         if (nPos.x < 0 || nPos.x >= imgW) {
-            vel->x *= -1;
-            nPos.x = pos->x + vel->x;
+            dir->x *= -1;
+            nPos.x = pos->x + dir->x;
         }
         if (nPos.y < 0 || nPos.y >= imgH) {
-            vel->y *= -1;
-            nPos.y = pos->y + vel->y;
+            dir->y *= -1;
+            nPos.y = pos->y + dir->y;
         }
-        *pos = nPos;
+
+        float dH = 1.0f + (float(tex2D<uchar1>(srcTex, nPos.x, nPos.y).x) - float(tex2D<uchar1>(srcTex, pos->x, pos->y).x)) / 256.0f;
+        float speedFactor = 2 * exp(dH - 2.0f);
+        //*pos = nPos;
+
+        if (speedFactor > 0.6) {
+            *pos = float2 { pos->x + speedFactor*dir->x, pos->y + speedFactor*dir->y };
+        }
+
 
         pos += jump;
-        vel += jump;
+        dir += jump;
         tx += jump;
     }
 }
@@ -274,13 +291,23 @@ void Particles::moveLeaders() {
     constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
     dim3 block(TPB_1D, 1, 1);
     dim3 grid((activeLeaders + TPB_1D - 1) / TPB_1D, 1, 1);
-    moveParticles_Leaders<<<grid, block>>>(dLeaderPos, dLeaderVel, activeLeaders, hMap->glData.imageWidth, hMap->glData.imageHeight);
+    moveParticles_Leaders<<<grid, block>>>(hMap->cudaData.texObj, dLeaderPos, dLeaderDir, activeLeaders, hMap->glData.imageWidth, hMap->glData.imageHeight);
 }
 
 void Particles::move() {
+    checkCudaErrors(cudaGraphicsMapResources(1, &hMap->cudaData.texResource, 0));
+    checkCudaErrors(cudaGraphicsSubResourceGetMappedArray(&hMap->cudaData.texArrayData, hMap->cudaData.texResource, 0, 0));
+
     this->moveLeaders();
     this->calculateDistances();
     this->moveFollowers();
+
+    checkCudaErrors(cudaGraphicsUnmapResources(1, &hMap->cudaData.texResource, 0));
 }
+
+
+
+
+
 
 

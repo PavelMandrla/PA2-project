@@ -16,6 +16,13 @@ private:
     static constexpr uchar3 leaderColor = {255, 0, 0};
     static constexpr uchar3 followerColor = {0, 0, 255};
 
+    //LEADER DATA
+    float2* dLeaderPos;
+    float2* dLeaderDir;
+    //FOLLOWER DATA
+    float2* dFollowerPos;
+    float* dDistances;
+
     unsigned int activeLeaders;
     unsigned int activeFollowers;
 
@@ -24,8 +31,9 @@ private:
 
     float* dOnes;
 
-    pair<vector<float2>, vector<float2>> generate(int n, float imgWidth, float imgHeight);
-    void generateOnGPU(int n, float imgWidth, float imgHeight, float2* &pos, float2* &vel);
+    vector<float2> generatePositions(int n);
+    vector<float2> generateDirections(int n);
+    void generateParticles();
 
     void moveLeaders();
     void moveFollowers();
@@ -33,15 +41,6 @@ private:
 public:
     shared_ptr<Settings> settings;
     shared_ptr<HeightMap> hMap;
-
-    //LEADER DATA
-    float2* dLeaderPos;
-    float2* dLeaderVel;
-    //FOLLOWER DATA
-    float2* dFollowerPos;
-    float2* dFollowerVel;
-
-    float* dDistances;
 
     Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap);
     ~Particles();

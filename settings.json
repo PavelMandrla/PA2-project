@@ -1,7 +1,7 @@
 {
   "leaders": 5,
   "followers": 10,
-  "heightmap": "/home/pavel/prg/cpp/PA2Project/images/terrain3Kx3K.tif",
+  "heightmap": "/home/pavel/prg/cpp/PA2Project/images/test.tiff",
   "heightmapGridX": 16000,
   "heightmapGridY": 9000,
   "viewportWidth": 1024,
