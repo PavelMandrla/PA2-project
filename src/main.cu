@@ -15,7 +15,6 @@ shared_ptr<HeightMap> hMap;
 shared_ptr<Particles> particles;
 
 void idle() {
-    //particles->renderToOverlay();
     particles->move();
     glutPostRedisplay();
 }

@@ -50,7 +50,6 @@ public:
     Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap);
     ~Particles();
 
-    //void renderToOverlay();
     void move();
 };
 
