@@ -1,12 +1,12 @@
 {
   "leaders": 5,
-  "followers": 10,
+  "followers": 1000,
   "heightmap": "/home/pavel/prg/cpp/PA2Project/images/test.tiff",
   "heightmapGridX": 16000,
   "heightmapGridY": 9000,
   "viewportWidth": 1024,
   "viewportHeight": 1024,
   "leaderRadius": 50,
-  "speedFactor": 0.123,
+  "speedFactor": 10,
   "outputFile": "path_to_output_file"
 }
