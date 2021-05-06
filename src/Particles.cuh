@@ -24,6 +24,7 @@ private:
     float2* dLeaderDir;
     //FOLLOWER DATA
     float2* dFollowerPos;   // POINTER TO ACTIVE FOLLOWER POSITION ARRAY
+    float2* dFollowerPosNext;
     unsigned char* dFollowerStatus;   // INFO, IF THE PARTICLE WAS TERMINATE
     float2* dFollowerPos1;  // TWO FOLLOWER POSITION ARRAYS NEEDED FOR REDUCTION OF TERMINATED PARTICLES
     float2* dFollowerPos2;
@@ -31,7 +32,7 @@ private:
     unsigned int activeLeaders;
     unsigned int activeFollowers;
 
-    unsigned int* dTerminatedCounter;
+    unsigned int* dActiveFollowersNext;
 
     cublasStatus_t status;
     cublasHandle_t handle;
@@ -42,6 +43,7 @@ private:
 
     void moveLeaders(unsigned char* pboData);
     void moveFollowers(unsigned char* pboData);
+    void exterminate();
     void calculateDistances();
 public:
     shared_ptr<Settings> settings;
