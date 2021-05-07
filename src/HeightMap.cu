@@ -92,8 +92,8 @@ void HeightMap::initOverlayTexture() {
     glGenTextures(1, &overlayTexId);
     glBindTexture(GL_TEXTURE_2D, overlayTexId);
 
-    std::vector<GLubyte> emptyData(this->glData.imageWidth * this->glData.imageHeight * 4, 200);
-    glTexImage2D(GL_TEXTURE_2D,0, GL_RGBA, this->glData.imageWidth, this->glData.imageHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptyData[0]);
+    std::vector<GLubyte> emptyData(settings->heightmapGridX * settings->heightmapGridY * 4, 0);
+    glTexImage2D(GL_TEXTURE_2D,0, GL_RGBA, settings->heightmapGridX, settings->heightmapGridY, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptyData[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
@@ -102,7 +102,7 @@ void HeightMap::initOverlayTexture() {
 
     glGenBuffers(1, &this->overlayPboID);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->overlayPboID);														// Make this the current UNPACK buffer (OpenGL is state-based)
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, glData.imageWidth * glData.imageHeight * 4, NULL, GL_DYNAMIC_COPY);	// Allocate data for the buffer. 4-channel 8-bit image
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, settings->heightmapGridX * settings->heightmapGridY * 4, NULL, GL_DYNAMIC_COPY);	// Allocate data for the buffer. 4-channel 8-bit image
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 }
 
