@@ -257,6 +257,7 @@ __global__ void moveParticles_Followers(const cudaTextureObject_t srcTex,
     if (threadIdx.x < leaderCount) {
         sLeaderPos[threadIdx.x] = leaderPos[threadIdx.x];
     }
+    __syncthreads();
 
     unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int jump = gridDim.x * blockDim.x;
@@ -303,7 +304,7 @@ void Particles::moveFollowers(unsigned char* pboData) {
     checkCudaErrors(cudaMemcpy(dActiveFollowersNext, vector<unsigned int>(1, 0).data(), sizeof(unsigned int), cudaMemcpyHostToDevice));
 
     dim3 block(TPB_1D, 1, 1);
-    dim3 grid((activeLeaders + TPB_1D - 1) / TPB_1D, 1, 1);
+    dim3 grid((activeFollowers + TPB_1D - 1) / TPB_1D, 1, 1);
 
     moveParticles_Followers<<<grid, block>>>(hMap->cudaData.texObj, dFollowerPos, dFollowerPosNext, activeFollowers, dLeaderPos, activeLeaders, dDistances, dActiveFollowersNext, pboData);
 
