@@ -4,6 +4,9 @@
 #include <chrono>
 #include <cudaDefs.h>
 
+constexpr unsigned int TPB_1D = 128;
+constexpr unsigned int TPB_8D = 8;
+
 __constant__ __device__ float cSpeedFactor;
 __constant__ __device__ float cRadiusSQ;
 
@@ -37,7 +40,8 @@ Particles::~Particles() {
     if (this->dLeaderDir) cudaFree(this->dLeaderDir);
     if (this->dFollowerPos) cudaFree(this->dFollowerPos);
     if (this->dFollowerPosNext) cudaFree(this->dFollowerPosNext);
-    if (this->dFollowerStatus) cudaFree(this->dFollowerStatus);
+    if (this->dLeadersPosSq) cudaFree(this->dLeadersPosSq);
+    if (this->dFollowersPosSq) cudaFree(this->dFollowersPosSq);
     if (this->dActiveFollowersNext) cudaFree(this->dActiveFollowersNext);
     if (this->dDistances) cudaFree(this->dDistances);
 }
@@ -81,10 +85,10 @@ void Particles::generateParticles() {
     checkCudaErrors(cudaMalloc((void**)&dFollowerPos, settings->followers * sizeof(float2)));
     checkCudaErrors(cudaMalloc((void**)&dFollowerPosNext, settings->followers * sizeof(float2)));
     checkCudaErrors(cudaMemcpy(dFollowerPos, generatePositions(settings->followers).data(), settings->followers * sizeof(float2), cudaMemcpyHostToDevice));
-    // FOLLOWERS - status
-    checkCudaErrors(cudaMalloc((void**)&dFollowerStatus, settings->followers * sizeof(unsigned char)));
-    checkCudaErrors(cudaMemcpy(dFollowerStatus, vector<unsigned char>(settings->followers, 0).data(), settings->followers * sizeof(unsigned char), cudaMemcpyHostToDevice));
-    // FOLLOWERS - terminated counter
+    //positions SQ
+    checkCudaErrors(cudaMalloc((void**)&dLeadersPosSq, 2 * settings->leaders * sizeof(float)));
+    checkCudaErrors(cudaMalloc((void**)&dFollowersPosSq, 2 * settings->followers * sizeof(float)));
+    // FOLLOWERS - alive counter
     checkCudaErrors(cudaMalloc((void**)&dActiveFollowersNext, sizeof(unsigned int)));
 
 }
@@ -106,17 +110,13 @@ __global__ void createSquareMatrix(float2* particles, int particleCount, float* 
 }
 
 inline void squarePositions(float* &dPositionsSq, float2* dParticles, unsigned int activeParticles) {
-    checkCudaErrors(cudaMalloc((void**)&dPositionsSq, 2 * activeParticles * sizeof(float)));
-    constexpr unsigned int TPB_1D = 128;
-    dim3 block(128,1,1); //TODO -> change TPB1D?
+    dim3 block(128,1,1);
     dim3 grid((activeParticles + TPB_1D - 1) / TPB_1D);
     createSquareMatrix<<<block, grid>>>(dParticles, activeParticles, dPositionsSq);
 }
 
 void Particles::calculateDistances() {
     // SQUARE OF POSITIONS
-    float* dLeadersPosSq;
-    float* dFollowersPosSq;
     squarePositions(dLeadersPosSq, dLeaderPos, activeLeaders);
     squarePositions(dFollowersPosSq, dFollowerPos, activeFollowers);
 
@@ -180,12 +180,16 @@ __device__ __forceinline__ void renderPixel(int x, int y, uchar3 color, const un
 
 __device__ __forceinline__ void renderParticle(int x, int y, uchar3 color, const unsigned int width, const unsigned int height, unsigned char* pbo) {
     #pragma unroll
-    for (int dX = -10; dX <= 10; dX++) {
+    for (int dX = -5; dX <= 5; dX++) {
         #pragma unroll
-        for (int dY = -10; dY <= 10; dY++) {
+        for (int dY = -5; dY <= 5; dY++) {
             renderPixel(x+dX, y + dY, color, width, height, pbo);
         }
     }
+}
+
+__device__ __forceinline__ float sigmoid(float x, const float c1 = 6.0f, const float c2 = 1.0f, const float max = 2.0f) {
+    return max / (1 + exp(-c1 * (x - c2)));
 }
 
 template<bool normalizeVector>__device__ __forceinline__ float2 getNewParticlePos(float2 pos, float2 dir, float dirLen, const cudaTextureObject_t srcTex) {
@@ -196,9 +200,11 @@ template<bool normalizeVector>__device__ __forceinline__ float2 getNewParticlePo
     float2 nPos = float2 {pos.x + dir.x * cSpeedFactor,
                           pos.y + dir.y * cSpeedFactor };
 
-    float dH = 1.0f + (float(tex2D<uchar1>(srcTex, nPos.x, nPos.y).x) - float(tex2D<uchar1>(srcTex, pos.x, pos.y).x)) / 256.0f;
-    return float2 {pos.x + dir.x * cSpeedFactor * dH,
-                   pos.y + dir.y * cSpeedFactor * dH};
+    //float dH = 1.0f + (float(tex2D<uchar1>(srcTex, nPos.x, nPos.y).x) - float(tex2D<uchar1>(srcTex, pos.x, pos.y).x)) / 256.0f;
+    float dH = 1.0f + (float(tex2D<uchar1>(srcTex, pos.x, pos.y).x) - float(tex2D<uchar1>(srcTex, nPos.x, nPos.y).x)) / 256.0f;
+
+    return float2 {pos.x + dir.x * cSpeedFactor * sigmoid(dH), pos.y + dir.y * cSpeedFactor * sigmoid(dH)};
+    //return float2 {pos.x + dir.x * cSpeedFactor * dH, pos.y + dir.y * cSpeedFactor * dH};
 }
 
 __global__ void moveParticles_Leaders(const cudaTextureObject_t srcTex,
@@ -234,7 +240,6 @@ __global__ void moveParticles_Leaders(const cudaTextureObject_t srcTex,
 }
 
 void Particles::moveLeaders(unsigned char* pboData) {
-    constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
     dim3 block(TPB_1D, 1, 1);
     dim3 grid((activeLeaders + TPB_1D - 1) / TPB_1D, 1, 1);
     moveParticles_Leaders<<<grid, block>>>(hMap->cudaData.texObj, dLeaderPos, dLeaderDir, activeLeaders, hMap->glData.imageWidth, hMap->glData.imageHeight, pboData);
@@ -252,6 +257,12 @@ __global__ void moveParticles_Followers(const cudaTextureObject_t srcTex,
                                         int imgW,
                                         int imgH,
                                         unsigned char* pbo) {
+    __shared__ float2 sLeaderPos[6000];
+
+    if (threadIdx.x < leaderCount) {
+        sLeaderPos[threadIdx.x] = leaderPos[threadIdx.x];
+    }
+
     unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int jump = gridDim.x * blockDim.x;
 
@@ -268,7 +279,7 @@ __global__ void moveParticles_Followers(const cudaTextureObject_t srcTex,
                 clLeaderI = i;
             }
         }
-        float2 clLeaderPos = leaderPos[clLeaderI];
+        float2 clLeaderPos = sLeaderPos[clLeaderI];
         float2 nPos;
         // MOVE TOWARDS LEADER
         if (clLeaderDst > 0) { // PREVENT DIVISION BY 0
@@ -296,7 +307,6 @@ void Particles::moveFollowers(unsigned char* pboData) {
     //RESET TERMINATED COUNTER
     checkCudaErrors(cudaMemcpy(dActiveFollowersNext, vector<unsigned int>(1, 0).data(), sizeof(unsigned int), cudaMemcpyHostToDevice));
 
-    constexpr unsigned int TPB_1D = 128; //TODO -> define somewhere TPB_1D
     dim3 block(TPB_1D, 1, 1);
     dim3 grid((activeLeaders + TPB_1D - 1) / TPB_1D, 1, 1);
 
@@ -322,9 +332,9 @@ void Particles::move() {
     checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&pboData, &pboSize, hMap->cudaData.pboResource));
 
     {   // CLEAR PBO
-        constexpr unsigned int TPB_1D = 8; //TODO -> define somewhere TPB_1D
-        dim3 block(TPB_1D, TPB_1D, 1);
-        dim3 grid((hMap->glData.imageWidth + TPB_1D - 1) / TPB_1D, (hMap->glData.imageHeight + TPB_1D - 1) / TPB_1D, 1);
+
+        dim3 block(TPB_8D, TPB_8D, 1);
+        dim3 grid((hMap->glData.imageWidth + TPB_8D - 1) / TPB_8D, (hMap->glData.imageHeight + TPB_8D - 1) / TPB_8D, 1);
         clearPBO<<<grid, block>>>(pboData, hMap->glData.imageWidth, hMap->glData.imageHeight);
     };
 

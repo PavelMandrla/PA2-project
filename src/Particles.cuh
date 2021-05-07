@@ -25,12 +25,16 @@ private:
     //FOLLOWER DATA
     float2* dFollowerPos;   // POINTER TO ACTIVE FOLLOWER POSITION ARRAY
     float2* dFollowerPosNext;
-    unsigned char* dFollowerStatus;   // INFO, IF THE PARTICLE WAS TERMINATE
+
+    float* dLeadersPosSq;
+    float* dFollowersPosSq;
 
     unsigned int activeLeaders;
     unsigned int activeFollowers;
 
     unsigned int* dActiveFollowersNext;
+
+
 
     cublasStatus_t status;
     cublasHandle_t handle;

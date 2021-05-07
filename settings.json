@@ -1,9 +1,9 @@
 {
   "leaders": 5,
-  "followers": 1000,
-  "heightmap": "/home/pavel/prg/cpp/PA2Project/images/noise.tif",
-  "heightmapGridX": 16000,
-  "heightmapGridY": 9000,
+  "followers": 100000,
+  "heightmap": "/home/pavel/prg/cpp/PA2Project/images/debug.tif",
+  "heightmapGridX": 1000,
+  "heightmapGridY": 1000,
   "viewportWidth": 1024,
   "viewportHeight": 1024,
   "leaderRadius": 50,

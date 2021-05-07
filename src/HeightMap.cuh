@@ -38,6 +38,8 @@ struct CudaData {
 
 class HeightMap {
 private:
+    shared_ptr<Settings> settings;
+
     void prepareGlObjects(const char* imageFileName);
     void initCUDAObjects();
     void initOverlayTexture();
