@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ParallelApplications2 LANGUAGES C CXX CUDA)
+project(ParallelApplications2-project LANGUAGES C CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE OFF)

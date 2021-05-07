@@ -35,8 +35,8 @@ Particles::~Particles() {
     status = cublasDestroy(handle);
     if (this->dLeaderPos) cudaFree(this->dLeaderPos);
     if (this->dLeaderDir) cudaFree(this->dLeaderDir);
-    if (this->dFollowerPos1) cudaFree(this->dFollowerPos1);
-    if (this->dFollowerPos2) cudaFree(this->dFollowerPos2);
+    if (this->dFollowerPos) cudaFree(this->dFollowerPos);
+    if (this->dFollowerPosNext) cudaFree(this->dFollowerPosNext);
     if (this->dFollowerStatus) cudaFree(this->dFollowerStatus);
     if (this->dActiveFollowersNext) cudaFree(this->dActiveFollowersNext);
     if (this->dDistances) cudaFree(this->dDistances);
@@ -47,11 +47,8 @@ vector<float2> Particles::generatePositions(int n) {
     std::mt19937 generator(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     std::uniform_real_distribution<float> dis(0.001f, 0.999f);
 
-    //float dW = imgWidth / float(n);
-    //float dH = imgHeight / float(n);
     for (int i = 0; i < n; i++) {
         // POSITION ON MAP
-        //pos.push_back(float2 {i * dW, i * dH});
         pos.push_back(float2 {dis(generator) * float(hMap->glData.imageWidth), dis(generator) * float(hMap->glData.imageHeight)});
     }
     return pos;
@@ -81,10 +78,8 @@ void Particles::generateParticles() {
     checkCudaErrors(cudaMalloc((void**)&dLeaderDir, settings->leaders * sizeof(float2)));
     checkCudaErrors(cudaMemcpy(dLeaderDir, generateDirections(settings->leaders).data(), settings->leaders * sizeof(float2), cudaMemcpyHostToDevice));
     // FOLLOWERS - positions
-    checkCudaErrors(cudaMalloc((void**)&dFollowerPos1, settings->followers * sizeof(float2)));
-    checkCudaErrors(cudaMalloc((void**)&dFollowerPos2, settings->followers * sizeof(float2)));
-    dFollowerPos = dFollowerPos1;
-    dFollowerPosNext = dFollowerPos2;
+    checkCudaErrors(cudaMalloc((void**)&dFollowerPos, settings->followers * sizeof(float2)));
+    checkCudaErrors(cudaMalloc((void**)&dFollowerPosNext, settings->followers * sizeof(float2)));
     checkCudaErrors(cudaMemcpy(dFollowerPos, generatePositions(settings->followers).data(), settings->followers * sizeof(float2), cudaMemcpyHostToDevice));
     // FOLLOWERS - status
     checkCudaErrors(cudaMalloc((void**)&dFollowerStatus, settings->followers * sizeof(unsigned char)));
@@ -184,9 +179,9 @@ __device__ __forceinline__ void renderPixel(int x, int y, uchar3 color, const un
 }
 
 __device__ __forceinline__ void renderParticle(int x, int y, uchar3 color, const unsigned int width, const unsigned int height, unsigned char* pbo) {
-#pragma unroll
+    #pragma unroll
     for (int dX = -10; dX <= 10; dX++) {
-#pragma unroll
+        #pragma unroll
         for (int dY = -10; dY <= 10; dY++) {
             renderPixel(x+dX, y + dY, color, width, height, pbo);
         }
