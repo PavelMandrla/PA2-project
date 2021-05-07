@@ -48,7 +48,6 @@ void initGL(int argc, char** argv) {
 }
 
 int main(int argc, char* argv[]) {
-    #pragma region initialize
     initializeCUDA(deviceProp);
     if (argc < 2) {
         printf("Please specify path to the configuration path");
@@ -58,8 +57,6 @@ int main(int argc, char* argv[]) {
     initGL(1, argv);
     hMap = make_shared<HeightMap>(settings);
     particles = make_shared<Particles>(settings, hMap);
-
-    #pragma endregion
 
     glutMainLoop();
 

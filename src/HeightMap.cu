@@ -9,9 +9,9 @@
 
 HeightMap::HeightMap(shared_ptr<Settings> settings) {
     this->settings = settings;
-    prepareGlObjects(settings->heightMap.c_str());
-    initCUDAObjects();
+    prepareHeightMapTexture(settings->heightMap.c_str());
     initOverlayTexture();
+    initCUDAObjects();
 }
 
 HeightMap::~HeightMap() {
@@ -25,7 +25,7 @@ HeightMap::~HeightMap() {
         glDeleteBuffers(1, &this->overlayPboID);
 }
 
-void HeightMap::prepareGlObjects(const char *imageFileName) {
+void HeightMap::prepareHeightMapTexture(const char *imageFileName) {
     FIBITMAP* tmp = ImageManager::GenericLoader(imageFileName, 0);
     glData.imageWidth = FreeImage_GetWidth(tmp);
     glData.imageHeight = FreeImage_GetHeight(tmp);
@@ -44,11 +44,6 @@ void HeightMap::prepareGlObjects(const char *imageFileName) {
 
     glBindTexture(GL_TEXTURE_2D, 0);
     FreeImage_Unload(tmp);
-
-    glGenBuffers(1, &this->overlayPboID);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->overlayPboID);														// Make this the current UNPACK buffer (OpenGL is state-based)
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, glData.imageWidth * glData.imageHeight * 4, NULL, GL_DYNAMIC_COPY);	// Allocate data for the buffer. 4-channel 8-bit image
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 }
 
 void HeightMap::initCUDAObjects() {
@@ -104,6 +99,11 @@ void HeightMap::initOverlayTexture() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenBuffers(1, &this->overlayPboID);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->overlayPboID);														// Make this the current UNPACK buffer (OpenGL is state-based)
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, glData.imageWidth * glData.imageHeight * 4, NULL, GL_DYNAMIC_COPY);	// Allocate data for the buffer. 4-channel 8-bit image
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 }
 
 void HeightMap::display() {

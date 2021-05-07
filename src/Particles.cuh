@@ -34,8 +34,6 @@ private:
 
     unsigned int* dActiveFollowersNext;
 
-
-
     cublasStatus_t status;
     cublasHandle_t handle;
 
