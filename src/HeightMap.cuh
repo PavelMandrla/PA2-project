@@ -11,13 +11,7 @@ using namespace std;
 struct GLData {
     unsigned int imageWidth;
     unsigned int imageHeight;
-    unsigned int imageBPP;
-    unsigned int imagePitch;
-
-    unsigned int pboID;
     unsigned int textureID;
-    unsigned int viewportWidth = 1024;
-    unsigned int viewportHeight = 1024;
 };
 
 struct CudaData {
@@ -46,6 +40,8 @@ private:
 public:
     GLData glData;
     CudaData cudaData;
+
+    unsigned int overlayPboID;
     unsigned int overlayTexId;
 
     HeightMap(shared_ptr<Settings> settings);

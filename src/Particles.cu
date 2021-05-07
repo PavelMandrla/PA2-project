@@ -347,7 +347,7 @@ void Particles::move() {
     // UNREGISTER HEIGHTMAP RESOURCE
     checkCudaErrors(cudaGraphicsUnmapResources(1, &hMap->cudaData.texResource, 0));
 
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, hMap->glData.pboID);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, hMap->overlayPboID);
     auto err = glGetError();
     glBindTexture(GL_TEXTURE_2D, hMap->overlayTexId);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, hMap->glData.imageWidth, hMap->glData.imageHeight, GL_RGBA, GL_UNSIGNED_BYTE, NULL);   //Source parameter is NULL, Data is coming from a PBO, not host memory

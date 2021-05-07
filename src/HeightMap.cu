@@ -8,9 +8,8 @@
 #include <vector>
 
 HeightMap::HeightMap(shared_ptr<Settings> settings) {
+    this->settings = settings;
     prepareGlObjects(settings->heightMap.c_str());
-    this->glData.viewportWidth = settings->viewportWidth;
-    this->glData.viewportHeight = settings->viewportHeight;
     initCUDAObjects();
     initOverlayTexture();
 }
@@ -22,16 +21,14 @@ HeightMap::~HeightMap() {
 
     if (this->glData.textureID > 0)
         glDeleteTextures(1, &this->glData.textureID);
-    if (this->glData.pboID > 0)
-        glDeleteBuffers(1, &this->glData.pboID);
+    if (this->overlayPboID > 0)
+        glDeleteBuffers(1, &this->overlayPboID);
 }
 
 void HeightMap::prepareGlObjects(const char *imageFileName) {
     FIBITMAP* tmp = ImageManager::GenericLoader(imageFileName, 0);
     glData.imageWidth = FreeImage_GetWidth(tmp);
     glData.imageHeight = FreeImage_GetHeight(tmp);
-    glData.imageBPP = FreeImage_GetBPP(tmp);
-    glData.imagePitch = FreeImage_GetPitch(tmp);
 
     //OpenGL Texture
     glEnable(GL_TEXTURE_2D);
@@ -45,12 +42,11 @@ void HeightMap::prepareGlObjects(const char *imageFileName) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
-
     glBindTexture(GL_TEXTURE_2D, 0);
     FreeImage_Unload(tmp);
 
-    glGenBuffers(1, &glData.pboID);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, glData.pboID);														// Make this the current UNPACK buffer (OpenGL is state-based)
+    glGenBuffers(1, &this->overlayPboID);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->overlayPboID);														// Make this the current UNPACK buffer (OpenGL is state-based)
     glBufferData(GL_PIXEL_UNPACK_BUFFER, glData.imageWidth * glData.imageHeight * 4, NULL, GL_DYNAMIC_COPY);	// Allocate data for the buffer. 4-channel 8-bit image
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 }
@@ -91,7 +87,7 @@ void HeightMap::initCUDAObjects() {
     // Register PBO
     checkCudaErrors(cudaGraphicsGLRegisterBuffer(
             &cudaData.pboResource,
-            glData.pboID,
+            this->overlayPboID,
             cudaGraphicsRegisterFlags::cudaGraphicsRegisterFlagsWriteDiscard
     ));
 }
@@ -119,18 +115,18 @@ void HeightMap::display() {
     glBindTexture(GL_TEXTURE_2D, this->glData.textureID);
     glBegin(GL_QUADS);
     glTexCoord2d(0, 0);		glVertex2d(0, 0);
-    glTexCoord2d(1, 0);		glVertex2d(this->glData.viewportWidth, 0);
-    glTexCoord2d(1, 1);		glVertex2d(this->glData.viewportWidth, this->glData.viewportHeight);
-    glTexCoord2d(0, 1);		glVertex2d(0, this->glData.viewportHeight);
+    glTexCoord2d(1, 0);		glVertex2d(settings->viewportWidth, 0);
+    glTexCoord2d(1, 1);		glVertex2d(settings->viewportWidth, settings->viewportHeight);
+    glTexCoord2d(0, 1);		glVertex2d(0, settings->viewportHeight);
     glEnd();
 
     //glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, this->overlayTexId);
     glBegin(GL_QUADS);
     glTexCoord2d(0, 0);		glVertex2d(0, 0);
-    glTexCoord2d(1, 0);		glVertex2d(this->glData.viewportWidth, 0);
-    glTexCoord2d(1, 1);		glVertex2d(this->glData.viewportWidth, this->glData.viewportHeight);
-    glTexCoord2d(0, 1);		glVertex2d(0, this->glData.viewportHeight);
+    glTexCoord2d(1, 0);		glVertex2d(settings->viewportWidth, 0);
+    glTexCoord2d(1, 1);		glVertex2d(settings->viewportWidth, settings->viewportHeight);
+    glTexCoord2d(0, 1);		glVertex2d(0, settings->viewportHeight);
     glEnd();
 
     glDisable(GL_TEXTURE_2D);
@@ -140,16 +136,16 @@ void HeightMap::display() {
 }
 
 void HeightMap::resize(GLsizei w, GLsizei h) {
-    this->glData.viewportWidth = w;
-    this->glData.viewportHeight = h;
+    settings->viewportWidth = w;
+    settings->viewportHeight = h;
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glViewport(0, 0, this->glData.viewportWidth, this->glData.viewportHeight);
+    glViewport(0, 0, settings->viewportWidth, settings->viewportHeight);
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluOrtho2D(0, this->glData.viewportWidth, 0, this->glData.viewportHeight);
+    gluOrtho2D(0, settings->viewportWidth, 0, settings->viewportHeight);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
