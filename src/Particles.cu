@@ -4,7 +4,7 @@
 #include <chrono>
 #include <cudaDefs.h>
 
-constexpr unsigned int TPB_1D = 128;
+constexpr unsigned int TPB_1D = 1024;
 constexpr unsigned int TPB_8D = 8;
 
 __constant__ __device__ float cSpeedFactor;
@@ -221,9 +221,8 @@ __global__ void clearPBO(unsigned char* pbo, const unsigned int pboWidth, const 
 }
 
 __device__ __forceinline__ void renderParticle(int x, int y, uchar3 color, unsigned char* pbo) {
-    //TODO -> fix w, h
     int nX = cOverlayDim.x * x / cTexDim.x;
-    int nY = cOverlayDim.x * y / cTexDim.y;
+    int nY = cOverlayDim.y * y / cTexDim.y;
 
     unsigned int pboIdx = ((nY * cOverlayDim.x) + nX) * 4;
     pbo[pboIdx++] = color.x;
@@ -246,7 +245,6 @@ template<bool normalizeVector>__device__ __forceinline__ float2 getNewParticlePo
 
     float dH = 1.0f + (float(tex2D<uchar1>(srcTex, pos.x, pos.y).x) - float(tex2D<uchar1>(srcTex, nPos.x, nPos.y).x)) / 256.0f;
     return float2 {pos.x + dir.x * cSpeedFactor * sigmoid(dH), pos.y + dir.y * cSpeedFactor * sigmoid(dH)};
-    //return float2 {pos.x + dir.x * cSpeedFactor * dH, pos.y + dir.y * cSpeedFactor * dH};
 }
 
 
