@@ -15,10 +15,6 @@ HeightMap::HeightMap(shared_ptr<Settings> settings) {
 }
 
 HeightMap::~HeightMap() {
-    //TODO -> fix Unregistering and unregister overlay texture
-//    checkCudaErrors(cudaGraphicsUnregisterResource(this->cudaData.texResource));
-//    checkCudaErrors(cudaGraphicsUnregisterResource(this->cudaData.pboResource));
-
     if (this->glData.textureID > 0)
         glDeleteTextures(1, &this->glData.textureID);
     if (this->overlayPboID > 0)

@@ -1,6 +1,6 @@
 {
   "leaders": 30,
-  "followers": 1000000,
+  "followers": 100000,
   "heightmap": "/home/pavel/prg/cpp/PA2Project/images/spiral10K.tif",
   "heightmapGridX": 600,
   "heightmapGridY": 600,
