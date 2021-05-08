@@ -35,10 +35,11 @@ Particles::Particles(shared_ptr<Settings> settings, shared_ptr<HeightMap> hMap) 
     this->handle = cublasHandle_t();
     this->status = cublasCreate(&handle) ;
 
+#ifdef USE_CUBLAS
     unsigned int onesCount = 2 * (settings->leaders > settings->followers ? settings->leaders : settings->followers);
     cudaMalloc((void**)&this->dOnes, sizeof(float) * onesCount);
     cudaMemcpy(dOnes, vector<float>(onesCount, 1.0f).data(), sizeof(float) * onesCount, cudaMemcpyHostToDevice);
-
+#endif
     checkCudaErrors(cudaMalloc((void**)&this->dDistances, activeLeaders * activeFollowers * sizeof(float)));
 }
 
@@ -48,10 +49,14 @@ Particles::~Particles() {
     if (this->dLeaderDir) cudaFree(this->dLeaderDir);
     if (this->dFollowerPos) cudaFree(this->dFollowerPos);
     if (this->dFollowerPosNext) cudaFree(this->dFollowerPosNext);
-    if (this->dLeadersPosSq) cudaFree(this->dLeadersPosSq);
-    if (this->dFollowersPosSq) cudaFree(this->dFollowersPosSq);
     if (this->dActiveFollowersNext) cudaFree(this->dActiveFollowersNext);
     if (this->dDistances) cudaFree(this->dDistances);
+
+#ifdef USE_CUBLAS
+    if (this->dLeadersPosSq) cudaFree(this->dLeadersPosSq);
+    if (this->dFollowersPosSq) cudaFree(this->dFollowersPosSq);
+    if (this->dOnes) cudaFree(this->dOnes);
+#endif
 }
 
 vector<float2> Particles::generatePositions(int n) {
@@ -93,13 +98,17 @@ void Particles::generateParticles() {
     checkCudaErrors(cudaMalloc((void**)&dFollowerPos, settings->followers * sizeof(float2)));
     checkCudaErrors(cudaMalloc((void**)&dFollowerPosNext, settings->followers * sizeof(float2)));
     checkCudaErrors(cudaMemcpy(dFollowerPos, generatePositions(settings->followers).data(), settings->followers * sizeof(float2), cudaMemcpyHostToDevice));
+#ifdef USE_CUBLAS
     //positions SQ
     checkCudaErrors(cudaMalloc((void**)&dLeadersPosSq, 2 * settings->leaders * sizeof(float)));
     checkCudaErrors(cudaMalloc((void**)&dFollowersPosSq, 2 * settings->followers * sizeof(float)));
+#endif
     // FOLLOWERS - alive counter
     checkCudaErrors(cudaMalloc((void**)&dActiveFollowersNext, sizeof(unsigned int)));
 
 }
+
+#ifdef USE_CUBLAS
 
 __global__ void createSquareMatrix(float2* particles, int particleCount, float* dst) {
     unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -162,6 +171,41 @@ void Particles::calculateDistances() {
 
 }
 
+#else
+__global__ void calculateDistanceMatrix(float2* dLeaders, unsigned int leaderCount, float2* dFollowers, int followerCount, float* dstMat) {
+    __shared__ float2 sLeaders[6000];
+    if (threadIdx.x < leaderCount) {
+        sLeaders[threadIdx.x] = dLeaders[threadIdx.x];
+    }
+    __syncthreads();
+
+    unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int jump = gridDim.x * blockDim.x;
+
+    float2* follower = &dFollowers[idx];
+    while (idx < followerCount) {
+        float *dst = dstMat + idx * leaderCount;
+        float2 f = *follower;
+
+        for (int i = 0; i < leaderCount; i++) {
+            float2 l = sLeaders[i];
+            *dst = pow(l.x - f.x, 2) + pow(l.y - f.y, 2);
+
+            dst++;
+        }
+
+        follower += jump;
+        idx += jump;
+    }
+}
+
+void Particles::calculateDistances() {
+    dim3 block(TPB_1D, 1, 1);
+    dim3 grid((activeFollowers + TPB_1D - 1) / TPB_1D, 1, 1);
+    calculateDistanceMatrix<<<grid, block>>>(dLeaderPos, activeLeaders, dFollowerPos, activeFollowers, dDistances);
+}
+
+#endif
 
 __global__ void clearPBO(unsigned char* pbo, const unsigned int pboWidth, const unsigned int pboHeight) {
     unsigned int tx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -281,6 +325,8 @@ __global__ void moveParticles_Followers(const cudaTextureObject_t srcTex,
         if (clLeaderDst > 0) { // PREVENT DIVISION BY 0
             float2 dir = {clLeaderPos.x - pos->x, clLeaderPos.y - pos->y};
             nPos = getNewParticlePos<true>(*pos, dir, sqrt(clLeaderDst), srcTex);
+        } else if (clLeaderDst < 0) {
+            nPos = float2 {10,10};
         } else {
             nPos = *pos;
         }

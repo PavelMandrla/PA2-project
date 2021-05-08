@@ -4,6 +4,8 @@ project(ParallelApplications2-project LANGUAGES C CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 
+#add_compile_definitions(USE_CUBLAS)
+
 add_subdirectory(../libs/ [binary_dir])
 
 add_library(FreeImage STATIC IMPORTED)

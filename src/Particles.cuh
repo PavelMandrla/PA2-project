@@ -18,16 +18,21 @@ private:
 
     //DISTANCE CALCULATION DATA
     float* dDistances;
+
+    #ifdef USE_CUBLAS
     float* dOnes;
+    float* dLeadersPosSq;
+    float* dFollowersPosSq;
+    #endif
     //LEADER DATA
     float2* dLeaderPos;
     float2* dLeaderDir;
+
     //FOLLOWER DATA
     float2* dFollowerPos;   // POINTER TO ACTIVE FOLLOWER POSITION ARRAY
     float2* dFollowerPosNext;
 
-    float* dLeadersPosSq;
-    float* dFollowersPosSq;
+
 
     unsigned int activeLeaders;
     unsigned int activeFollowers;
