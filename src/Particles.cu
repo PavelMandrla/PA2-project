@@ -243,8 +243,11 @@ template<bool normalizeVector>__device__ __forceinline__ float2 getNewParticlePo
     float2 nPos = float2 {pos.x + dir.x * cSpeedFactor,
                           pos.y + dir.y * cSpeedFactor };
 
-    float dH = 1.0f + (float(tex2D<uchar1>(srcTex, pos.x, pos.y).x) - float(tex2D<uchar1>(srcTex, nPos.x, nPos.y).x)) / 256.0f;
+    float dH = 1.0f + (float(tex2D<float>(srcTex, pos.x, pos.y)) - float(tex2D<float>(srcTex, nPos.x, nPos.y)));
+    //float dH = 1.0f + (float(tex2D<uchar1>(srcTex, pos.x, pos.y).x) - float(tex2D<uchar1>(srcTex, nPos.x, nPos.y).x)) / 256.0f;
     return float2 {pos.x + dir.x * cSpeedFactor * sigmoid(dH), pos.y + dir.y * cSpeedFactor * sigmoid(dH)};
+    //return float2 {pos.x + dir.x * cSpeedFactor * dH, pos.y + dir.y * cSpeedFactor * dH};
+
 }
 
 

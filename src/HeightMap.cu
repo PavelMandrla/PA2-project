@@ -60,9 +60,9 @@ void HeightMap::initCUDAObjects() {
     cudaData.resDesc.res.array.array = cudaData.texArrayData;
 
     // Set Texture Descriptor: Tex Units will know how to read the texture
-    cudaData.texDesc.readMode = cudaReadModeElementType;
+    cudaData.texDesc.readMode = cudaReadModeNormalizedFloat;
     cudaData.texDesc.normalizedCoords = false;
-    cudaData.texDesc.filterMode = cudaFilterModePoint;
+    cudaData.texDesc.filterMode = cudaFilterModeLinear;
     cudaData.texDesc.addressMode[0] = cudaAddressModeClamp;
     cudaData.texDesc.addressMode[1] = cudaAddressModeClamp;
 

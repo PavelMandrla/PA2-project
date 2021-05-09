@@ -32,11 +32,8 @@ private:
     float2* dFollowerPos;   // POINTER TO ACTIVE FOLLOWER POSITION ARRAY
     float2* dFollowerPosNext;
 
-
-
     unsigned int activeLeaders;
     unsigned int activeFollowers;
-
     unsigned int* dActiveFollowersNext;
 
     cublasStatus_t status;

@@ -14,10 +14,6 @@ shared_ptr<Settings> settings;
 shared_ptr<HeightMap> hMap;
 shared_ptr<Particles> particles;
 
-void idle() {
-    particles->move();
-    glutPostRedisplay();
-}
 
 void initGL(int argc, char** argv) {
     glutInit(&argc, argv);
@@ -32,7 +28,10 @@ void initGL(int argc, char** argv) {
 
     glutDisplayFunc([](){ hMap->display(); });
     glutReshapeFunc([](GLsizei w, GLsizei h){ hMap->resize(w, h); });
-    glutIdleFunc(idle);
+    glutIdleFunc([](){
+        particles->move();
+        glutPostRedisplay();
+    });
     glutSetCursor(GLUT_CURSOR_CROSSHAIR);
 
     // initialize necessary OpenGL extensions
