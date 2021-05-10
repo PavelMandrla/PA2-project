@@ -17,6 +17,8 @@ HeightMap::HeightMap(shared_ptr<Settings> settings) {
 HeightMap::~HeightMap() {
     if (this->glData.textureID > 0)
         glDeleteTextures(1, &this->glData.textureID);
+    if (this->overlayTexId > 0)
+        glDeleteTextures(1, &this->overlayTexId);
     if (this->overlayPboID > 0)
         glDeleteBuffers(1, &this->overlayPboID);
 }
